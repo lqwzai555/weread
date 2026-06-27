@@ -13,7 +13,7 @@ import subprocess
 import sys
 import os
 
-BOOK_ID = "40504312"
+BOOK_ID = "3300196086"
 API_KEY = os.environ.get("WEREAD_API_KEY", "")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 GITHUB_USER = os.environ.get("GITHUB_USER", "lqwzai555")
@@ -23,12 +23,13 @@ API_URL = "https://i.weread.qq.com/api/agent/gateway"
 NOTES_FILE = os.path.join(os.path.dirname(__file__), "酒吧长谈.md")
 
 
-def call_api(api_name, extra=None):
+def call_api(api_name, extra=None, include_book_id=True):
     payload = {
         "api_name": api_name,
-        "bookId": BOOK_ID,
         "skill_version": SKILL_VERSION,
     }
+    if include_book_id:
+        payload["bookId"] = BOOK_ID
     if extra:
         payload.update(extra)
     data = json.dumps(payload).encode("utf-8")
@@ -151,7 +152,7 @@ def main():
     print(f"  共 {len(bookmarks)} 条划线")
 
     print("获取想法...")
-    reviews_resp = call_api("/review/list/mine", {"maxIdx": 0, "count": 100, "listType": 1})
+    reviews_resp = call_api("/review/list/mine", {"bookid": BOOK_ID, "synckey": 0, "count": 100}, include_book_id=False)
     reviews = [r.get("review", r) for r in reviews_resp.get("reviews", [])]
     print(f"  共 {len(reviews)} 条想法")
 
