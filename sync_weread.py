@@ -28,6 +28,7 @@ import urllib.request
 
 REPO_DIR = os.path.dirname(os.path.abspath(__file__))
 CREDENTIALS_FILE = os.path.expanduser("~/.weread_credentials")
+EXCLUDE_FILE = os.path.join(REPO_DIR, "sync_exclude.txt")
 API_URL = "https://i.weread.qq.com/api/agent/gateway"
 SKILL_VERSION = "1.0.4"
 
@@ -105,6 +106,19 @@ def fmt_duration(seconds):
 def sanitize_filename(title):
     """替换文件系统里有问题的字符（主要是 "/"），其余原样保留。"""
     return title.replace("/", "／").strip()
+
+
+def load_exclude_list(path):
+    """读取排除名单：每行一个 bookId 或完全一致的书名，"#" 开头/行内 "#" 之后是注释。"""
+    excluded = set()
+    if not os.path.exists(path):
+        return excluded
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.split("#", 1)[0].strip()
+            if line:
+                excluded.add(line)
+    return excluded
 
 
 # ---------------------------------------------------------------------------
@@ -409,15 +423,28 @@ def find_candidates():
         candidates.append(shelf_book)
 
     candidates.sort(key=lambda b: merged[b["bookId"]]["readTime"])
+
+    excluded = load_exclude_list(EXCLUDE_FILE)
+    if excluded:
+        before = len(candidates)
+        candidates = [
+            b for b in candidates
+            if b["bookId"] not in excluded and b.get("title") not in excluded
+        ]
+        skipped = before - len(candidates)
+        if skipped:
+            print(f"（按 sync_exclude.txt 跳过了 {skipped} 本）")
+
     return candidates
 
 
-def git_commit_and_push(repo_dir, files, today_str, dry_run):
+def git_commit_and_push(repo_dir, files, today_str, dry_run, push):
     if not files:
         print("没有文件变动，跳过 git 提交。")
         return
     if dry_run:
-        print(f"[dry-run] 会提交并推送这些文件：{files}")
+        action = "提交并推送" if push else "提交（不推送）"
+        print(f"[dry-run] 会{action}这些文件：{files}")
         return
     subprocess.run(["git", "config", "user.email", "weread@auto.com"], cwd=repo_dir, check=True)
     subprocess.run(["git", "config", "user.name", "WeRead-Sync"], cwd=repo_dir, check=True)
@@ -428,6 +455,10 @@ def git_commit_and_push(repo_dir, files, today_str, dry_run):
         cwd=repo_dir,
         check=True,
     )
+    if not push:
+        print("已在本地提交，不会自动推送。确认笔记内容没问题后，自己运行 `git push`，")
+        print("或者加 --push 参数、或者让 Claude 帮忙推送。")
+        return
     if GITHUB_TOKEN:
         remote_url = f"https://{GITHUB_USER}:{GITHUB_TOKEN}@github.com/{GITHUB_USER}/{GITHUB_REPO}.git"
         subprocess.run(["git", "remote", "set-url", "origin", remote_url], cwd=repo_dir, check=True)
@@ -438,6 +469,10 @@ def git_commit_and_push(repo_dir, files, today_str, dry_run):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true", help="只打印会做什么，不写文件、不碰 git")
+    parser.add_argument(
+        "--push", action="store_true",
+        help="提交后自动推送到 GitHub；默认只本地提交，方便先看一眼新笔记再决定推不推",
+    )
     args = parser.parse_args()
 
     if not API_KEY:
@@ -461,7 +496,7 @@ def main():
         except Exception as e:
             print(f"    同步失败：{e}", file=sys.stderr)
 
-    git_commit_and_push(REPO_DIR, touched, today_str, args.dry_run)
+    git_commit_and_push(REPO_DIR, touched, today_str, args.dry_run, args.push)
 
 
 if __name__ == "__main__":
