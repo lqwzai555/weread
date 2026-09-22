@@ -13,6 +13,35 @@ import subprocess
 import sys
 import os
 
+CREDENTIALS_FILE = os.path.expanduser("~/.weread_credentials")
+
+
+def load_credentials_file(path):
+    """把形如 `export KEY=VALUE` 的隐藏凭据文件加载进 os.environ。
+
+    launchd 启动脚本时不会执行 shell 的 rc 文件（如 .zshrc），所以这里
+    独立加载一次，保证无论是交互式 shell 手动运行，还是被 launchd 定时
+    任务调用，都能拿到凭据。已存在的环境变量优先，不会被文件内容覆盖。
+    """
+    if not os.path.exists(path):
+        return
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):]
+            if "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            os.environ.setdefault(key, value)
+
+
+load_credentials_file(CREDENTIALS_FILE)
+
 BOOK_ID = "3300196086"
 API_KEY = os.environ.get("WEREAD_API_KEY", "")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
